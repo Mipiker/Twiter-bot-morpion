@@ -1,46 +1,71 @@
 var twit = require('twit');
 var client = new twit(require('./config'));
+var mapPlayerMat = {};
 
 // API
+// Starting
 var streamStart = client.stream('statuses/filter', {track: '@MipikerLeGrand morpion ?'});
 streamStart.on('tweet', function (tweet) {
-	// Starting
 	var userScreenName = '@' + tweet.user.screen_name;
 	console.log('Starting a new game with ' + userScreenName);
   	client.post('statuses/update', {status:  userScreenName + ' ok, I play pawn X and you O'});
-  	// Playing against player
  	var mat =	[['▢', '▢', '▢'],
 				 ['▢', '▢', '▢'],
 				 ['▢', '▢', '▢']];
+	mapPlayerMat.userScreenName = mat;
 	play(mat, 'X');
 	console.log('bot played : \n' + display(mat));
 	client.post('statuses/update', {status:  userScreenName + '\n' + display(mat)});
-	var streamPlay = client.stream('statuses/filter', {track: '@MipikerLeGrand your turn :'});
-	streamPlay.on('tweet', function(tweet) {
-		var msg = '';
-		for(var j = 0; j < tweet.text.length; j++) {
-			if(tweet.text[j] === '▢' || tweet.text[j] === 'X' || tweet.text[j] === 'O') {
-				msg += tweet.text[j];
-			}
+});
+
+// Playing
+
+var streamPlay = client.stream('statuses/filter', {track: '@MipikerLeGrand your turn'});
+streamPlay.on('tweet', function(tweet) {
+	var userScreenName = '@' + tweet.user.screen_name;
+	console.log(userScreenName + " replie")
+	var mat = mapPlayerMat.userScreenName;
+	// Getting player turn
+	var msg = '';
+	for(var j = 0; j < tweet.text.length; j++) {
+		if(tweet.text[j] === '▢' || tweet.text[j] === 'X' || tweet.text[j] === 'O') {
+			msg += tweet.text[j];
 		}
-		var x = -1;
-		var y = 0;
-		for(var j = 0; j < msg.length; j++) {
-			x++;
-			if(x >= 3) {
-				x = 0;
-				y++;
-			}
-			if(mat[x][y] === '▢' && msg[j] !== '▢') {
-				mat[x][y] = msg[j];
-				break;
-			}
+	}
+	var x = -1;
+	var y = 0;
+	for(var j = 0; j < msg.length; j++) {
+		x++;
+		if(x >= 3) {
+			x = 0;
+			y++;
 		}
-		console.log(userScreenName + ' played : \n' + display(mat));
-		play(mat, 'X');
-		console.log('bot played : \n' + display(mat));
-		client.post('statuses/update', {status:  userScreenName + '\n' + display(mat)});
-	});
+		if(mat[x][y] === '▢' && msg[j] !== '▢') {
+			mat[x][y] = msg[j];
+			break;
+		}
+	}
+	console.log(userScreenName + ' played : \n' + display(mat));
+	var resultDetectWin = detectWin(mat);
+	if(resultDetectWin === 'O') {
+		client.post('statuses/update', {status:  userScreenName + ' Congrats, You win !!!'});
+		return;
+	} else if(resultDetectWin === 'N') {
+		client.post('statuses/update', {status:  userScreenName + ' Ho, Noboby win ... '});
+		return;
+	}
+	// IA turn
+	play(mat, 'X');
+	console.log('bot played : \n' + display(mat));
+	client.post('statuses/update', {status:  userScreenName + '\n' + display(mat)});
+	var resultDetectWin = detectWin(mat);
+	if(resultDetectWin === 'X') {
+		client.post('statuses/update', {status:  userScreenName + ' Haha, I win !!!'});
+		return;
+	} else if(resultDetectWin === 'N') {
+		client.post('statuses/update', {status:  userScreenName + ' Ho, Noboby win ... '});
+		return;
+	}
 });
 
 // Place bot pawn
@@ -162,9 +187,9 @@ function detectWin(mat) {
 			}
 		}
 		if(X === 3) {
-			return true;
+			return 'X';
 		} else if (O === 3) {
-			return true;
+			return 'O';
 		}
 	}
 	// Columns
@@ -179,9 +204,9 @@ function detectWin(mat) {
 			}
 		}
 		if(X === 3) {
-			return true;
+			return 'X';
 		} else if (O === 3) {
-			return true;
+			return 'O';
 		}
 	}
 	// Diagonal
@@ -201,10 +226,25 @@ function detectWin(mat) {
 			Y2++;
 		}
 	}
-	if(X1 === 3 || O1 === 3 || X2 === 3 || O2 === 3) {
-		return true;
+	if(X1 === 3 || X2 === 3) {
+		return 'X';
+	} else if(O1 === 3 || O2 === 3) {
+		return 'O';
 	}
-	return false;
+	// Noboby
+	var nobodyWon = true;
+	for(var y = 0; y < 3; y++) {
+		for(var x = 0; x < 3; x++) {
+			if(mat[x][y] === '▢') {
+				nobodyWon = false;
+			}
+		}
+	}
+	if(nobodyWon) {
+		return 'N';	
+	}
+	// Game not finished
+	return 'E';
 }
 
 // Return a string that represent the given matrix
@@ -237,22 +277,3 @@ function pickRandomly(mat, pawn) {
 function getRandomInt(max) {
   return Math.floor(Math.random() * Math.floor(max));
 }
-
-/*var mat =	[['▢', '▢', 'O'],
-			 ['▢', 'O', '▢'],
-			 ['▢', '▢', '▢']];
-for(var i = 0; i < 4; i++) {
-	play(mat, 'X');
-	console.log(display(mat));
-	if(detectWin(mat)) {
-		console.log('X win');
-		break;
-	}
-	play(mat, 'O');
-	console.log(display(mat));
-	if(detectWin(mat)) {
-		console.log('O win');
-		break;
-	}
-}
-console.log('No win');*/
