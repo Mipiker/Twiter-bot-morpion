@@ -1,5 +1,5 @@
-var twit = require('twit');
-var client = new twit(require('./config'));
+const twit = require('twit');
+const client = new twit(require('./config'));
 var mapPlayerMat = {};
 
 // API
@@ -19,145 +19,186 @@ streamStart.on('tweet', function (tweet) {
 });
 
 // Playing
-
 var streamPlay = client.stream('statuses/filter', {track: '@MipikerLeGrand your turn'});
 streamPlay.on('tweet', function(tweet) {
 	var userScreenName = '@' + tweet.user.screen_name;
-	console.log(userScreenName + " replie")
 	var mat = mapPlayerMat.userScreenName;
-	// Getting player turn
-	var msg = '';
-	for(var j = 0; j < tweet.text.length; j++) {
-		if(tweet.text[j] === '▢' || tweet.text[j] === 'X' || tweet.text[j] === 'O') {
-			msg += tweet.text[j];
+	if(mat !== undefined) {
+		// Getting player turn
+		var msg = '';
+		for(var j = 0; j < tweet.text.length; j++) {
+			if(tweet.text[j] === '▢' || tweet.text[j] === 'X' || tweet.text[j] === 'O') {
+				msg += tweet.text[j];
+			}
 		}
-	}
-	var x = -1;
-	var y = 0;
-	for(var j = 0; j < msg.length; j++) {
-		x++;
-		if(x >= 3) {
-			x = 0;
-			y++;
+		var x = -1;
+		var y = 0;
+		for(var j = 0; j < msg.length; j++) {
+			x++;
+			if(x >= 3) {
+				x = 0;
+				y++;
+			}
+			if(mat[x][y] === '▢' && msg[j] !== '▢') {
+				mat[x][y] = msg[j];
+				break;
+			}
 		}
-		if(mat[x][y] === '▢' && msg[j] !== '▢') {
-			mat[x][y] = msg[j];
-			break;
+		console.log(userScreenName + ' played : \n' + display(mat));
+		var resultDetectWin = detectWin(mat);
+		if(resultDetectWin === 'O') {
+			client.post('statuses/update', {status:  userScreenName + ' Congrats, You win !!!'});
+			console.log(userScreenName + ' win');
+			return;
+		} else if(resultDetectWin === 'N') {
+			client.post('statuses/update', {status:  userScreenName + ' Ho, Noboby win ... '});
+			console.log('Noboby win');
+			return;
 		}
-	}
-	console.log(userScreenName + ' played : \n' + display(mat));
-	var resultDetectWin = detectWin(mat);
-	if(resultDetectWin === 'O') {
-		client.post('statuses/update', {status:  userScreenName + ' Congrats, You win !!!'});
-		return;
-	} else if(resultDetectWin === 'N') {
-		client.post('statuses/update', {status:  userScreenName + ' Ho, Noboby win ... '});
-		return;
-	}
-	// IA turn
-	play(mat, 'X');
-	console.log('bot played : \n' + display(mat));
-	client.post('statuses/update', {status:  userScreenName + '\n' + display(mat)});
-	var resultDetectWin = detectWin(mat);
-	if(resultDetectWin === 'X') {
-		client.post('statuses/update', {status:  userScreenName + ' Haha, I win !!!'});
-		return;
-	} else if(resultDetectWin === 'N') {
-		client.post('statuses/update', {status:  userScreenName + ' Ho, Noboby win ... '});
-		return;
+		// IA turn
+		play(mat, 'X');
+		console.log('bot played : \n' + display(mat));
+		client.post('statuses/update', {status:  userScreenName + '\n' + display(mat)});
+		var resultDetectWin = detectWin(mat);
+		if(resultDetectWin === 'X') {
+			client.post('statuses/update', {status:  userScreenName + ' Haha, I win !!!'});
+			console.log('bot win against ' + userScreenName);
+			return;
+		} else if(resultDetectWin === 'N') {
+			client.post('statuses/update', {status:  userScreenName + ' Ho, Noboby win ... '});
+			console.log('Noboby win');
+			return;
+		}
+	} else {
+		console.log(userScreenName + " tried to play but never start the game");
 	}
 });
+
+// var mat =	[['X', 'O', '▢'],
+// 			 ['▢', 'O', '▢'],
+// 			 ['▢', '▢', 'X']];
+// play(mat, 'X');
+// console.log(display(mat));
 
 // Place bot pawn
 function play(mat, pawn) {
 	var bestX = -1;
 	var bestY = -1;
 	var bestNbOponentCouldStop = 0;
+	var imminentLose = false;
 	stopSearch:
 	for(var y = 0; y < 3; y++) {
 		for(var x = 0; x < 3; x++) {
 			if(mat[x][y] ==='▢') {
 				var nbOponentCouldStop = 0;
 				var nbOponentCouldStopLine = 0;
+				var nbOwnPawnLine = 0;
 				var alreadyBlockedLine = false;
 				// Line
 				for(var x_ = 0; x_ < 3; x_++) {
 					if(x_ !== x) {
-						if(mat[x_][y] !== pawn && mat[x_][y] !== '▢') {
+						if(mat[x_][y] !== pawn && mat[x_][y] !== '▢' && !imminentLose) {
 							nbOponentCouldStop++;
 							nbOponentCouldStopLine++;
 						}
 						if(mat[x_][y] === pawn) {
 							alreadyBlockedLine = true;
+							nbOwnPawnLine++;
 						}
 					}
 				}
-				if(!alreadyBlockedLine && nbOponentCouldStopLine === 2) {
+				if(nbOwnPawnLine === 2) {
 					bestX = x;
 					bestY = y;
 					break stopSearch;
 				}
+				if(!alreadyBlockedLine && nbOponentCouldStopLine === 2) { // Imminent lose
+					bestX = x;
+					bestY = y;
+					imminentLose = true;
+				}
 				// Column
 				nbOponentCouldStopLine = 0;
+				nbOwnPawnLine = 0;
 				for(var y_ = 0; y_ < 3; y_++) {
-					if(x_ !== x) {
-						if(mat[x][y_] !== pawn && mat[x][y_] !== '▢') {
+					if(y_ !== y) {
+						if(mat[x][y_] !== pawn && mat[x][y_] !== '▢' && !imminentLose) {
 							nbOponentCouldStop++;
 							nbOponentCouldStopLine++;
 						}
 						if(mat[x][y_] === pawn) {
 							alreadyBlockedLine = true;
+							nbOwnPawnLine++;
 						}
 					}
 				}
-				if(!alreadyBlockedLine && nbOponentCouldStopLine === 2) {
+				if(nbOwnPawnLine === 2) {
 					bestX = x;
 					bestY = y;
 					break stopSearch;
 				}
+				if(!alreadyBlockedLine && nbOponentCouldStopLine === 2) {
+					bestX = x;
+					bestY = y;
+					imminentLose = true;
+				}
 				// Diagonal \
 				nbOponentCouldStopLine = 0;
+				nbOwnPawnLine = 0;
 				if(x === y) {
 					for(var i = 0; i < 3; i++) {
 						if(i !== x) {
-							if(mat[i][i] !== pawn && mat[i][i] !== '▢') {
+							if(mat[i][i] !== pawn && mat[i][i] !== '▢' && !imminentLose) {
 								nbOponentCouldStop++;
 								nbOponentCouldStopLine++;
 							}
 							if(mat[i][i] === pawn) {
 								alreadyBlockedLine = true;
+								nbOwnPawnLine++;
 							}
 						}
 					}
 				}
-				if(!alreadyBlockedLine && nbOponentCouldStopLine === 2) {
+				if(nbOwnPawnLine === 2) {
 					bestX = x;
 					bestY = y;
 					break stopSearch;
 				}
+				if(!alreadyBlockedLine && nbOponentCouldStopLine === 2) {
+					bestX = x;
+					bestY = y;
+					imminentLose = true;
+				}
 				// Diagonal /
 				nbOponentCouldStopLine = 0;
+				nbOwnPawnLine = 0;
 				if(2 - x === y) {
 					for(var i = 0; i < 3; i++) {
 						if(i !== y) {
-						 	if(mat[2 - i][i] !== pawn && mat[2 - i][i] !== '▢') {
+						 	if(mat[2 - i][i] !== pawn && mat[2 - i][i] !== '▢' && !imminentLose) {
 								nbOponentCouldStop++;
 								nbOponentCouldStopLine++;
 							}
 							if(mat[2 - i][i] === pawn) {
 								alreadyBlockedLine = true;
+								nbOwnPawnLine++;
 							}
 						}
 					}	
 				}
-				if(!alreadyBlockedLine && nbOponentCouldStopLine === 2) {
+				if(nbOwnPawnLine === 2) {
 					bestX = x;
 					bestY = y;
 					break stopSearch;
 				}
+				if(!alreadyBlockedLine && nbOponentCouldStopLine === 2) {
+					bestX = x;
+					bestY = y;
+					imminentLose = true;
+				}
 
-				// If the bot can't lose, he play the place where it bloc the max nb of pawn of his opponent
-				if(nbOponentCouldStop > bestNbOponentCouldStop) {
+				// If the bot can't lose or win, he play the place where it bloc the max nb of pawn of his opponent
+				if(!imminentLose && nbOponentCouldStop > bestNbOponentCouldStop) {
 					bestNbOponentCouldStop = nbOponentCouldStop;
 					bestX = x;
 					bestY = y;
@@ -168,7 +209,7 @@ function play(mat, pawn) {
 
 	if(bestX !== -1 && bestY !== -1) {
 		mat[bestX][bestY] = pawn;
-	} else { // Happen when nobody has played when the game start because thre is no best move
+	} else { // Happen when nobody has played when the game start because there is no best move (for the bot)
 		pickRandomly(mat, pawn);
 	}
 }
@@ -182,8 +223,8 @@ function detectWin(mat) {
 		for(var x = 0; x < 3; x++) {
 			if(mat[x][y] === 'X') {
 				X++;
-			} else if(mat[x][y] === 'Y') {
-				Y++;
+			} else if(mat[x][y] === 'O') {
+				O++;
 			}
 		}
 		if(X === 3) {
@@ -193,14 +234,14 @@ function detectWin(mat) {
 		}
 	}
 	// Columns
-	for(var x = 0; x < 3; x++) {
+	for(var y = 0; y < 3; y++) {
 		var X = 0;
 		var O = 0;
-		for(var y = 0; y < 3; y++) {
+		for(var x = 0; x < 3; x++) {
 			if(mat[x][y] === 'X') {
 				X++;
-			} else if(mat[x][y] === 'Y') {
-				Y++;
+			} else if(mat[x][y] === 'O') {
+				O++;
 			}
 		}
 		if(X === 3) {
@@ -217,13 +258,13 @@ function detectWin(mat) {
 	for(var i = 0; i < 3; i++) {
 		if(mat[i][i] === 'X') {
 			X1++;
-		} else if(mat[i][i] === 'Y') {
-			Y1++;
+		} else if(mat[i][i] === 'O') {
+			O1++;
 		}
 		if(mat[2 - i][i] === 'X') {
 			X2++;
-		} else if(mat[2 - i][i] === 'Y') {
-			Y2++;
+		} else if(mat[2 - i][i] === 'O') {
+			O2++;
 		}
 	}
 	if(X1 === 3 || X2 === 3) {
@@ -231,20 +272,15 @@ function detectWin(mat) {
 	} else if(O1 === 3 || O2 === 3) {
 		return 'O';
 	}
-	// Noboby
-	var nobodyWon = true;
+	// Game not finished
 	for(var y = 0; y < 3; y++) {
 		for(var x = 0; x < 3; x++) {
 			if(mat[x][y] === '▢') {
-				nobodyWon = false;
+				return 'E'; 
 			}
 		}
 	}
-	if(nobodyWon) {
-		return 'N';	
-	}
-	// Game not finished
-	return 'E';
+	return 'N';	// Nobody won
 }
 
 // Return a string that represent the given matrix
@@ -253,7 +289,7 @@ function display(mat) {
 	for(var y = 0; y < 3; y++) {
 		var line = '';
 		for(var x = 0; x < 3; x++) {
-			line += mat[x][y];
+			line += mat[y][x];
 		}
 	display += line + '\n';
 	}
